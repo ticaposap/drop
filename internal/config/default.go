@@ -207,8 +207,8 @@ set_vars = [
 #              listed in allowed_domains. All the connections and DNS
 #              queries are handled by Drop outside of the sandbox,
 #              programs don't need any configuration. Only TCP over
-#              IPv4 is supported. Port mapping settings are not
-#              supported.
+#              IPv4 is supported. Of the port mapping settings below,
+#              only tcp_host_ports is supported.
 mode = "isolated"
 
 # Domains that programs in the sandbox can access in the "filtered"
@@ -261,6 +261,8 @@ udp_published_ports = []
 # Entries have the form
 # HOST_PORT[:DROP_PORT]
 # If DROP_PORT is not specified, it defaults to HOST_PORT
+# Example: "5037" allows adb in the sandbox to connect to the adb
+# server running on the host.
 tcp_host_ports = []
 # Localhost UDP ports open on the host that the sandbox can access.
 udp_host_ports = []

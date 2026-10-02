@@ -202,7 +202,7 @@ Network mode:
 
 - `mode = "off"` - programs in the sandbox cannot access remote or local network services. Ports opened by the programs are not accessible from the host.
 - `mode = "isolated"` (default) - programs in the sandbox can access remote services. Port mapping settings below determine which services running in the sandbox can be accessed from the host and which services running on the host can be accessed from the sandbox.
-- `mode = "filtered"` - programs in the sandbox can access only the domains listed in [allowed_domains](#allowed_domains). Port mapping settings are not supported.
+- `mode = "filtered"` - programs in the sandbox can access only the domains listed in [allowed_domains](#allowed_domains). Of the port mapping settings below, only [tcp_host_ports](#tcp_host_ports) is supported.
 
 The command-line override `-n, --net` takes priority over the TOML setting:
 ```
@@ -259,10 +259,14 @@ drop run --udp-publish auto
 #### `tcp_host_ports`
 
 A list of localhost TCP ports open on the host that the sandbox can
-access.
+access. Supported in the `isolated` and `filtered` network modes. For
+example, `"5037"` allows `adb` in the sandbox to connect to the adb
+server running on the host.
 
 Entries have the form `HOST_PORT[:DROP_PORT]`. If DROP_PORT is not
-specified, it defaults to HOST_PORT.
+specified, it defaults to HOST_PORT. In the `filtered` mode, the
+`"auto"` entry is not supported and DROP_PORT can't be 53 or a port
+allowed by `allowed_domains`.
 
 ```
 tcp_host_ports = [
