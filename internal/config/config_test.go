@@ -55,6 +55,7 @@ func expectConfigsEqual(t *testing.T, actual *Config, expected *Config) {
 	expectSlicesEqual(t, "Net.TCPHostPorts", actual.Net.TCPHostPorts, expected.Net.TCPHostPorts)
 	expectSlicesEqual(t, "Net.UDPPublishedPorts", actual.Net.UDPPublishedPorts, expected.Net.UDPPublishedPorts)
 	expectSlicesEqual(t, "Net.UDPHostPorts", actual.Net.UDPHostPorts, expected.Net.UDPHostPorts)
+	expectSlicesEqual(t, "Net.AllowedDomains", actual.Net.AllowedDomains, expected.Net.AllowedDomains)
 }
 
 func checkError(expected string, got error) error {
@@ -404,6 +405,42 @@ udp_host_ports = []
 			error: "",
 		},
 		{
+			name: "filtered net config",
+			tomlStr: `
+[net]
+mode = "filtered"
+allowed_domains = ["example.com", "*.github.com", "example.org:8080"]
+`,
+			expected: Config{
+				Runtime: RuntimeNative,
+				Net: Net{
+					Mode:              "filtered",
+					TCPPublishedPorts: []PublishedPort{},
+					UDPPublishedPorts: []PublishedPort{},
+					AllowedDomains:    []string{"example.com", "*.github.com", "example.org:8080"},
+				},
+			},
+			error: "",
+		},
+		{
+			name: "invalid allowed_domains entry",
+			tomlStr: `
+[net]
+mode = "filtered"
+allowed_domains = ["https://example.com"]
+`,
+			error: "invalid allowed_domains entry: invalid domain 'https://example.com'",
+		},
+		{
+			name: "port forwarding in filtered mode",
+			tomlStr: `
+[net]
+mode = "filtered"
+tcp_host_ports = ["8080"]
+`,
+			error: "port forwarding is not supported with filtered network mode",
+		},
+		{
 			name:    "no net section",
 			tomlStr: ``,
 			expected: Config{
@@ -658,7 +695,7 @@ udp_host_ports = ["abc"]
 mode = "foo"
 `,
 			expected: Config{},
-			error:    "invalid network mode 'foo': must be 'off' or 'isolated'",
+			error:    "invalid network mode 'foo': must be 'off', 'isolated' or 'filtered'",
 		},
 		{
 			name: "invalid mount format",

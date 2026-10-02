@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/wrr/drop/internal/netproxy"
 	"github.com/wrr/drop/internal/osutil"
 )
 
@@ -68,6 +69,8 @@ type Net struct {
 	TCPHostPorts      []HostPort      `toml:"tcp_host_ports"`
 	UDPPublishedPorts []PublishedPort `toml:"udp_published_ports"`
 	UDPHostPorts      []HostPort      `toml:"udp_host_ports"`
+	// AllowedDomains is used only in the filtered mode.
+	AllowedDomains []string `toml:"allowed_domains"`
 }
 
 type PublishedPort struct {
@@ -304,6 +307,7 @@ func merge(base *Config, sub *Config) *Config {
 			TCPHostPorts:      slices.Concat(base.Net.TCPHostPorts, sub.Net.TCPHostPorts),
 			UDPPublishedPorts: slices.Concat(base.Net.UDPPublishedPorts, sub.Net.UDPPublishedPorts),
 			UDPHostPorts:      slices.Concat(base.Net.UDPHostPorts, sub.Net.UDPHostPorts),
+			AllowedDomains:    slices.Concat(base.Net.AllowedDomains, sub.Net.AllowedDomains),
 		},
 	}
 }
@@ -340,6 +344,10 @@ func Validate(cfg *Config) error {
 
 	if err := validateHostPorts(cfg.Net.UDPHostPorts); err != nil {
 		return fmt.Errorf("invalid udp_host_ports: %v", err)
+	}
+
+	if err := validateFilteredNet(cfg.Net); err != nil {
+		return err
 	}
 	return nil
 }
@@ -528,11 +536,30 @@ func validateEnvironExposedVars(patterns []string) error {
 
 func validateNetworkMode(mode string) error {
 	switch mode {
-	case "off", "isolated", "unjailed":
+	case "off", "isolated", "filtered", "unjailed":
 		return nil
 	default:
-		return fmt.Errorf("invalid network mode '%s': must be 'off' or 'isolated'", mode)
+		return fmt.Errorf("invalid network mode '%s': must be 'off', 'isolated' or 'filtered'", mode)
 	}
+}
+
+// validateFilteredNet validates allowed_domains setting. Port mappings are not supported in the filtered mode,
+// because the sandbox has no network connectivity other than the
+// filtering proxy.
+func validateFilteredNet(n Net) error {
+	for _, entry := range n.AllowedDomains {
+		if _, err := netproxy.ParseRule(entry); err != nil {
+			return fmt.Errorf("invalid allowed_domains entry: %v", err)
+		}
+	}
+	if n.Mode == "filtered" &&
+		(len(n.TCPPublishedPorts) > 0 ||
+			len(n.TCPHostPorts) > 0 ||
+			len(n.UDPPublishedPorts) > 0 ||
+			len(n.UDPHostPorts) > 0) {
+		return fmt.Errorf("port forwarding is not supported with filtered network mode")
+	}
+	return nil
 }
 
 // validatePublishedPorts validates published port list. The list
