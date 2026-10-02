@@ -54,8 +54,14 @@ type Proxy struct {
 	logger *log.Logger
 	dialer *net.Dialer
 
+	// lookupIP resolves allowed domains for DNS queries.
+	lookupIP func(ctx context.Context, host string) ([]netip.Addr, error)
+
 	mu      sync.Mutex
 	tunnels map[net.Conn]struct{}
+	// resolved maps addresses returned by the DNS server to the names
+	// that resolved to them.
+	resolved map[netip.Addr]map[string]struct{}
 	// closers are listeners closed when the proxy is closed.
 	closers []io.Closer
 	closed  bool
@@ -65,9 +71,11 @@ type Proxy struct {
 // matching allow. Each request is logged to logOut.
 func New(allow Allowlist, logOut io.Writer) *Proxy {
 	p := &Proxy{
-		allow:   allow,
-		logger:  log.New(logOut, "", log.LstdFlags),
-		tunnels: make(map[net.Conn]struct{}),
+		allow:    allow,
+		logger:   log.New(logOut, "", log.LstdFlags),
+		lookupIP: lookupIPv4,
+		tunnels:  make(map[net.Conn]struct{}),
+		resolved: make(map[netip.Addr]map[string]struct{}),
 	}
 	p.dialer = &net.Dialer{
 		Timeout:        30 * time.Second,
