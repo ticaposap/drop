@@ -251,10 +251,35 @@ class TestNet(TestBase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn('invalid allowed_domains entry', result.stderr)
 
-        result = self.drop_run('--net filtered -T 8080 ls')
+        result = self.drop_run('--net filtered -t 8080 ls')
         self.assertNotEqual(0, result.returncode)
-        self.assertIn('port forwarding is not supported with filtered '
-                      'network mode', result.stderr)
+        self.assertIn('only tcp_host_ports port forwarding is supported '
+                      'with filtered network mode', result.stderr)
+
+        result = self.drop_run('--net filtered -T 53 ls')
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn('sandbox port 53 is already used', result.stderr)
+
+    def test_filtered_port_forwarding_from_host(self):
+        self.drop_init()
+        # Expose host localhost TCP port 20118 as sandbox port 5037
+        # (like adb server)
+        tcp_server = self.run_background(
+            'bash -c "echo -n hello | nc -4 -v -l -p 20118"'
+        )
+        self.wait_port_bound(tcp_server, 20118)
+        result = self.drop_run(
+            '--net filtered -T 20118:5037 '
+            'bash -c "nc -4 -w 1 127.0.0.1 5037"')
+        self.assertSuccess(result)
+        self.assertEqual('hello', result.stdout)
+        self.kill_process(tcp_server)
+
+        # The port is not exposed on other addresses
+        result = self.drop_run(
+            '--net filtered -T 20118:5037 nc -4 -zv -w 1 10.0.0.1 5037')
+        self.assertEqual(1, result.returncode)
+        self.assertIn('Connection refused', result.stderr)
 
     def start_host_http_server(self, port):
         """Start HTTP server on the host localhost and wait until it
