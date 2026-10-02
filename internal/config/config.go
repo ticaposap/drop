@@ -543,21 +543,35 @@ func validateNetworkMode(mode string) error {
 	}
 }
 
-// validateFilteredNet validates allowed_domains setting. Port mappings are not supported in the filtered mode,
-// because the sandbox has no network connectivity other than the
-// filtering proxy.
+// validateFilteredNet validates allowed_domains setting and port
+// mappings in the filtered network mode. Only tcp_host_ports mapping
+// is supported in the filtered mode, the sandbox has no network
+// connectivity other than the filtering proxy.
 func validateFilteredNet(n Net) error {
-	for _, entry := range n.AllowedDomains {
-		if _, err := netproxy.ParseRule(entry); err != nil {
-			return fmt.Errorf("invalid allowed_domains entry: %v", err)
-		}
+	allow, err := netproxy.ParseAllowlist(n.AllowedDomains)
+	if err != nil {
+		return fmt.Errorf("invalid allowed_domains entry: %v", err)
 	}
-	if n.Mode == "filtered" &&
-		(len(n.TCPPublishedPorts) > 0 ||
-			len(n.TCPHostPorts) > 0 ||
-			len(n.UDPPublishedPorts) > 0 ||
-			len(n.UDPHostPorts) > 0) {
-		return fmt.Errorf("port forwarding is not supported with filtered network mode")
+	if n.Mode != "filtered" {
+		return nil
+	}
+	if len(n.TCPPublishedPorts) > 0 ||
+		len(n.UDPPublishedPorts) > 0 ||
+		len(n.UDPHostPorts) > 0 {
+		return fmt.Errorf("only tcp_host_ports port forwarding is supported with filtered network mode")
+	}
+	// Sandbox ports that are already used by the filtering proxy:
+	// DNS and ports allowed by allowed_domains.
+	usedPorts := append([]int{53}, allow.Ports()...)
+	for _, m := range n.TCPHostPorts {
+		if m.Auto {
+			return fmt.Errorf("invalid tcp_host_ports: \"auto\" is not supported with filtered network mode")
+		}
+		if slices.Contains(usedPorts, m.GuestPort) {
+			return fmt.Errorf("invalid tcp_host_ports: sandbox port %d is already used by DNS, "+
+				"allowed_domains or another tcp_host_ports entry", m.GuestPort)
+		}
+		usedPorts = append(usedPorts, m.GuestPort)
 	}
 	return nil
 }

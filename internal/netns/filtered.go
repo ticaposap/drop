@@ -31,7 +31,8 @@ import (
 // Sockets created by ListenFiltered, in the order they are returned.
 const (
 	dnsSocket = iota
-	// Followed by sockets for intercepted TCP connections.
+	// Followed by sockets for intercepted TCP connections and then by
+	// sockets for tcp_host_ports.
 	firstInterceptSocket
 )
 
@@ -44,7 +45,10 @@ const dnsPort = 53
 // filtered network mode and creates sockets that the parent serves:
 //   - DNS server listening on UDP 0.0.0.0:53,
 //   - for each port allowed by allowed_domains, a socket listening on
-//     0.0.0.0:port that accepts intercepted connections.
+//     0.0.0.0:port that accepts intercepted connections,
+//   - for each tcp_host_ports entry, a socket listening on
+//     127.0.0.1:sandbox_port, connections to which are forwarded to the
+//     host localhost port.
 //
 // The namespace has only the loopback interface, so nothing can leave
 // the sandbox other than via the sockets served by the parent. All
@@ -88,6 +92,12 @@ func ListenFiltered(netConfig config.Net) ([]*os.File, error) {
 			return nil, err
 		}
 	}
+	for _, m := range netConfig.TCPHostPorts {
+		if err := listen("tcp4", fmt.Sprintf("127.0.0.1:%d", m.GuestPort)); err != nil {
+			closeAll()
+			return nil, err
+		}
+	}
 	return files, nil
 }
 
@@ -98,7 +108,7 @@ func FilteredSocketCount(netConfig config.Net) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	return firstInterceptSocket + len(ports), nil
+	return firstInterceptSocket + len(ports) + len(netConfig.TCPHostPorts), nil
 }
 
 // interceptedPorts returns ports on which connections are intercepted.
@@ -251,15 +261,17 @@ func StartProxy(files []*os.File, netConfig config.Net, logPath string) (func(),
 		return fail(fmt.Errorf("proxy DNS socket: %v", err))
 	}
 	sockets = append(sockets, dnsConn)
-	var interceptListeners []net.Listener
+	var listeners []net.Listener
 	for _, f := range files[firstInterceptSocket:] {
 		l, err := net.FileListener(f)
 		if err != nil {
-			return fail(fmt.Errorf("proxy intercept listener: %v", err))
+			return fail(fmt.Errorf("proxy listener: %v", err))
 		}
 		sockets = append(sockets, l)
-		interceptListeners = append(interceptListeners, l)
+		listeners = append(listeners, l)
 	}
+	interceptListeners := listeners[:len(listeners)-len(netConfig.TCPHostPorts)]
+	hostPortListeners := listeners[len(interceptListeners):]
 
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
@@ -269,6 +281,9 @@ func StartProxy(files []*os.File, netConfig config.Net, logPath string) (func(),
 	go proxy.ServeDNS(dnsConn)
 	for _, l := range interceptListeners {
 		go proxy.ServeTransparent(l)
+	}
+	for i, l := range hostPortListeners {
+		go proxy.ServeHostPort(l, netConfig.TCPHostPorts[i].HostPort)
 	}
 	return func() {
 		proxy.Close()

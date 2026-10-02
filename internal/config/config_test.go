@@ -432,13 +432,78 @@ allowed_domains = ["https://example.com"]
 			error: "invalid allowed_domains entry: invalid domain 'https://example.com'",
 		},
 		{
-			name: "port forwarding in filtered mode",
+			name: "tcp_host_ports in filtered mode",
 			tomlStr: `
 [net]
 mode = "filtered"
-tcp_host_ports = ["8080"]
+allowed_domains = ["example.com", "example.org:8443"]
+tcp_host_ports = ["5037", "9000:9001"]
 `,
-			error: "port forwarding is not supported with filtered network mode",
+			expected: Config{
+				Runtime: RuntimeNative,
+				Net: Net{
+					Mode:              "filtered",
+					TCPPublishedPorts: []PublishedPort{},
+					TCPHostPorts:      []HostPort{{HostPort: 5037, GuestPort: 5037}, {HostPort: 9000, GuestPort: 9001}},
+					UDPPublishedPorts: []PublishedPort{},
+					AllowedDomains:    []string{"example.com", "example.org:8443"},
+				},
+			},
+		},
+		{
+			name: "tcp_published_ports in filtered mode",
+			tomlStr: `
+[net]
+mode = "filtered"
+tcp_published_ports = ["8080"]
+`,
+			error: "only tcp_host_ports port forwarding is supported with filtered network mode",
+		},
+		{
+			name: "udp_host_ports in filtered mode",
+			tomlStr: `
+[net]
+mode = "filtered"
+udp_host_ports = ["8080"]
+`,
+			error: "only tcp_host_ports port forwarding is supported with filtered network mode",
+		},
+		{
+			name: "auto tcp_host_ports in filtered mode",
+			tomlStr: `
+[net]
+mode = "filtered"
+tcp_host_ports = ["auto"]
+`,
+			error: "invalid tcp_host_ports: \"auto\" is not supported with filtered network mode",
+		},
+		{
+			name: "tcp_host_ports conflicts with allowed_domains port",
+			tomlStr: `
+[net]
+mode = "filtered"
+allowed_domains = ["example.com"]
+tcp_host_ports = ["8443:443"]
+`,
+			error: "invalid tcp_host_ports: sandbox port 443 is already used",
+		},
+		{
+			name: "tcp_host_ports conflicts with DNS port",
+			tomlStr: `
+[net]
+mode = "filtered"
+tcp_host_ports = ["53"]
+`,
+			error: "invalid tcp_host_ports: sandbox port 53 is already used",
+		},
+		{
+			name: "duplicated tcp_host_ports sandbox port",
+			tomlStr: `
+[net]
+mode = "filtered"
+tcp_host_ports = ["5037", "5038:5037"]
+`,
+			error: "invalid tcp_host_ports: sandbox port 5037 is already used",
 		},
 		{
 			name:    "no net section",

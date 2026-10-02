@@ -67,11 +67,14 @@ func RunParent(flags *cli.RunFlags, homeDir, dropHome string) error {
 	}
 
 	if (len(flags.TcpPublishedPorts) > 0 ||
-		len(flags.TcpHostPorts) > 0 ||
 		len(flags.UdpPublishedPorts) > 0 ||
 		len(flags.UdpHostPorts) > 0) &&
 		cfg.Net.Mode != "isolated" {
 		return fmt.Errorf("port forwarding is only supported with isolated network mode (--net isolated)")
+	}
+	if len(flags.TcpHostPorts) > 0 &&
+		cfg.Net.Mode != "isolated" && cfg.Net.Mode != "filtered" {
+		return fmt.Errorf("--tcp-host is only supported with isolated or filtered network mode")
 	}
 
 	// Socket pair for communicating with the child process.
